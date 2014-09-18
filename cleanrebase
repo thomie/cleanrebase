@@ -1,0 +1,104 @@
+#!/usr/bin/env sh
+
+help="Usage: git checkout master && $0 <branch>
+
+This tool suggests which rebase command to run next, for a rebase of <branch>
+onto master. It finds new commits on master that contain changes created by
+the 'cleanup' script, and makes sure the <branch> gets rebased on top of them
+with as little merge difficulties as possible.
+
+Run the suggested 'git rebase' command, and follow the instructions given by
+git. Then run 'git checkout master && $0 <branch>' again, until you see the
+message '$0 is DONE'.
+
+This is how the suggestions are made:
+  * if the first new commit on master /does not/ contain changes created by
+    the 'cleanup' script, then the suggested command will be to rebase onto
+    the /parent/ of the first new commit on master that /is/ created by the
+    'cleanup' script, or onto the tip of master, if such commit does not
+    exist. Since these are normal rebase commands, you may have to solve merge
+    conflicts as usual.
+  * if the first new commit on master /does/ contain changes created by the
+    'cleanup' script, then the suggested rebase command will move <branch> one
+    commit closer to the tip of master. This is a special rebase command,
+    which never results in a merge conflicts for you to solve (it favors the
+    commits from <branch> in case of a merge conflict, and runs the 'cleanup'
+    script on all changed files (via an intermediate script called
+    'cleanupcommit', which also amends the final result)).
+
+Your data should be safe when running the suggested commands. If you want, you
+can create backup snapshots of <branch> before you start, by running:
+
+  git branch <backupbranch> <branch>
+
+In case something goes wrong, don't hesitate to ask for support on the
+mailinglist or irc. Happy rebasing!
+"
+
+
+### Functions
+die() { echo "Error in $0. $@" 1>&2; exit 1; }
+
+version2int() {
+  echo "$@" | awk '{print $NF}' | awk -F. '{printf "%03d%03d%03d", $1, $2, $3}'
+}
+
+
+### Argument handling
+if [ "$#" -eq 0 ]; then
+  echo "$help"
+  exit 1
+fi
+
+for arg in "$@"; do
+  case $arg in
+    --help)
+      echo "$help"; exit 0
+      ;;
+    *)
+      test -z "$branch" -a -n "$arg" || die "Usage: $0 [--help] <branch>"
+      branch=$arg
+      ;;
+  esac
+done
+
+
+### Sanity checks
+# Make sure we are in root.
+test -f ./cleanupcommit ||
+  die "File not found: 'cleanupcommit'. Are you in the repo root directory?"
+
+# Make sure we have a decent git.
+# -exec argument to rebase was added in 1.7.3
+# https://github.com/git/git/blob/master/Documentation/RelNotes/1.7.3.txt
+mingit=${MINGIT:-1.7.3}
+test $(version2int `git --version`) -ge $(version2int $mingit) ||
+  die "Please upgrade git to a version >= $mingit"
+
+# Make sure we have the latest version of the scripts / are on master.
+test master = `git rev-parse --abbrev-ref HEAD` ||
+  die "Please run 'git checkout master' first"
+
+# Make sure <branch> exists.
+git show-ref --quiet refs/heads/$branch ||
+  die "Branch '$branch' does not exist"
+
+
+### Actual code
+first_new_commit=`git log $branch..master --pretty=format:%h | tail -1`
+cleanup_script_commit=`git log $branch..master --pretty=format:%h --grep '^run cleanup script$' | tail -1`
+
+if [ -n "$cleanup_script_commit" ]; then
+  if [ $cleanup_script_commit != $first_new_commit ]; then
+    command="git rebase $cleanup_script_commit^ $branch"
+  else
+    # -X theirs means keep code in $branch (confusingly)
+    command="git rebase -i -s recursive -X theirs --exec './cleanupcommit' $cleanup_script_commit $branch"
+  fi
+elif [ -n "$first_new_commit" ]; then
+  command="git rebase master $branch"
+else
+  echo "$0 is DONE" 1>&2; exit 1
+fi
+
+echo $command

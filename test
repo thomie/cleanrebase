@@ -1,0 +1,124 @@
+#!/usr/bin/env sh
+set -e
+
+die() { echo "Error in $0. $@" 1>&2; exit 1; }
+
+assertOutput () {
+  command="$1"
+  expected="$2"
+  output=`bash -c "$command"` &&
+    test "$output" = "$expected" ||
+    echo "FAIL: '$1'. Expected: '$2'. Got: '`$1`'"
+}
+
+shouldSucceed () {
+  command="$1"
+  bash -c "$command" > /dev/null || die "FAIL: '$command' did not succeed"
+}
+
+shouldDie () {
+  command="$1"
+  bash -c "$command" > /dev/null && die "FAIL: '$command' did not die" || true
+}
+
+shouldDieWith () {
+  command="$1"
+  expected="$2"
+
+  output=`bash -c "$command" 2>&1 > /dev/null` &&
+    die "FAIL: '$command' dit not die" 1>&2 ||
+    test "$output" = "$expected" || die "`cat <<- EOF
+	FAIL: '$command'
+	Expected: '$expected'
+	Got:      '$output'
+EOF`"
+}
+
+# Create testrepo
+rm -rf testrepo
+mkdir testrepo
+cd testrepo
+git init -q
+cp ../cleanrebase ../cleanup ../cleanupcommit .
+git add cleanrebase cleanup cleanupcommit
+git commit -q -m 'initial commit'
+
+# Run ui tests
+shouldSucceed true
+shouldDieWith false ""
+git checkout -q -b temp &&
+  shouldDieWith "./cleanrebase master" \
+  "Error in ./cleanrebase. Please run 'git checkout master' first" &&
+  git checkout -q master && git branch -q -D temp
+shouldDie "./cleanrebase" # Help text
+shouldSucceed "./cleanrebase --help" # Help text
+shouldDieWith "./cleanrebase one two" \
+  "Error in ./cleanrebase. Usage: ./cleanrebase [--help] <branch>"
+shouldDieWith "./cleanrebase foo" \
+  "Error in ./cleanrebase. Branch 'foo' does not exist"
+shouldDieWith "MINGIT=1.19.0 ./cleanrebase wip/test" \
+  "Error in ./cleanrebase. Please upgrade git to a version >= 1.19.0"
+mkdir tmp && cd tmp && shouldDieWith "../cleanrebase wip/test" \
+  "Error in ../cleanrebase. File not found: 'cleanupcommit'. Are you in the repo root directory?" &&
+  cd ../ && rm -rf tmp
+
+# Add some test files and commits
+echo 'ptext (sLit "foo")' | tee file.hs file.lhs > /dev/null
+git add file.*
+git commit -q -m 'file.hs file.lhs'
+git tag root
+sed -i 's/foo/bar/' file.hs
+git commit -q -a -m "s/foo/bar/ file.hs" # Introduce hs-conflict.
+git tag hs-bar
+
+# Add a test branch and commits
+git checkout -q -b wip/test root
+sed -i 's/foo/baz/' *
+sed -i 's/$/  /' file.hs # Trailing whitespace
+git commit -q -a -m "s/foo/baz/"
+git merge -q hs-bar -s ours -m 'conflict file.hs' # Branch wip/test wins.
+
+# Cleanup files on master
+git checkout -q master
+git ls-files | xargs ./cleanup
+git commit -a -m 'run cleanup script'
+
+# Some more commits on master
+sed -i 's/foo/bar/' file.lhs
+sed -i 's/$/  /' file.lhs # Make sure second cleanup has something to do.
+git commit -q -a -m "s/foo/bar/ file.lhs" # Introduce lhs-conflict.
+git ls-files | xargs ./cleanup
+git commit -a -m 'run cleanup script' # Test that cleanup commit can be last.
+
+# Rebase test branch onto master
+# 1
+`./cleanrebase wip/test`
+# 2
+git checkout -q master
+`./cleanrebase wip/test` || true
+assertOutput 'cat file.lhs | head -1' '<<<<<<< HEAD'
+assertOutput 'cat file.lhs | tail -1' '>>>>>>> s/foo/baz/'
+sed -i -n '/bar/p' file.lhs # solve conflict, master wins
+git add file.lhs
+git rebase --continue
+# 3
+git checkout -q master
+`./cleanrebase wip/test`
+# 4
+git checkout -q master
+shouldDieWith './cleanrebase wip/test' './cleanrebase is DONE'
+
+# Check final state
+# The idea of this test is that file.hs now contains 'baz', and file.lhs
+# contains 'bar', because wip/test wins the first merge and master the second.
+git checkout -q wip/test
+assertOutput 'cat file.hs' 'text "baz"'
+assertOutput 'cat file.lhs' 'text "bar"'
+assertOutput 'git log --pretty=format:%s' 's/foo/baz/
+run cleanup script
+s/foo/bar/ file.lhs
+run cleanup script
+s/foo/bar/ file.hs
+file.hs file.lhs
+initial commit'
+echo ok
