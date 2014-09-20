@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+set -e
 
 help="Usage: git checkout master && $0 <branch>
 

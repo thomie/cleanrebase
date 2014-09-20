@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
+set -e
 # Cleanup files passed as arguments.
 #
-# Usage: git ls-files | xargs ./cleanup
+# Usage: git ls-files -z | xargs -0 ./cleanup
 #
 # Please follow the following 2 rules, unless called from a rebase command
 # suggested by cleanrebase (i.e. via cleanupcommit). The cleanrebase tool
@@ -11,10 +12,12 @@
 #    git commit -a -m 'run cleanup script'
 
 # Strip trailing whitespace.
-sed -i 's/ *$//g' "$@"
+grep -Z -d skip -l . "$@" |
+  xargs -0 -r sed -i 's/ *$//g'
 
 # See #7995 comment #4.
 # It is faster to grep for the pattern before calling sed.
 # That is also why this is not a pure sed script.
-grep -d skip -l 'ptext (sLit "[^"]*")' "$@" |
-  xargs -r sed -i 's/ptext (sLit \("[^"]*"\))/text \1/'
+grep -Z -d skip -l . "$@" |
+  xargs -0 -r grep -Z -l 'ptext (sLit "[^"]*")' |
+  xargs -0 -r sed -i 's/ptext (sLit \("[^"]*"\))/text \1/'

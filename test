@@ -41,7 +41,14 @@ cd testrepo
 git init -q
 cp ../cleanrebase ../cleanup ../cleanupcommit .
 git add cleanrebase cleanup cleanupcommit
+echo 'two spaces-->  ' > spaces\ in\ filename
+echo 'two spaces-->  ' > 'newlines
+in
+filename'
+git add spaces* newlines*
 git commit -q -m 'initial commit'
+git submodule add ../testrepo testsubmodule # Can cause problems with ls-files
+git commit -q -m 'second commit'
 
 # Run ui tests
 shouldSucceed true
@@ -73,21 +80,21 @@ git tag hs-bar
 
 # Add a test branch and commits
 git checkout -q -b wip/test root
-sed -i 's/foo/baz/' *
+sed -i 's/foo/baz/' file.*
 sed -i 's/$/  /' file.hs # Trailing whitespace
 git commit -q -a -m "s/foo/baz/"
 git merge -q hs-bar -s ours -m 'conflict file.hs' # Branch wip/test wins.
 
 # Cleanup files on master
 git checkout -q master
-git ls-files | xargs ./cleanup
+git ls-files -z | xargs -0 ./cleanup
 git commit -a -m 'run cleanup script'
 
 # Some more commits on master
 sed -i 's/foo/bar/' file.lhs
 sed -i 's/$/  /' file.lhs # Make sure second cleanup has something to do.
 git commit -q -a -m "s/foo/bar/ file.lhs" # Introduce lhs-conflict.
-git ls-files | xargs ./cleanup
+git ls-files -z | xargs -0 ./cleanup
 git commit -a -m 'run cleanup script' # Test that cleanup commit can be last.
 
 # Rebase test branch onto master
@@ -114,11 +121,14 @@ shouldDieWith './cleanrebase wip/test' './cleanrebase is DONE'
 git checkout -q wip/test
 assertOutput 'cat file.hs' 'text "baz"'
 assertOutput 'cat file.lhs' 'text "bar"'
+assertOutput 'cat spaces*' 'two spaces-->' # Stripped.
+assertOutput 'cat newlines*' 'two spaces-->' # Stripped.
 assertOutput 'git log --pretty=format:%s' 's/foo/baz/
 run cleanup script
 s/foo/bar/ file.lhs
 run cleanup script
 s/foo/bar/ file.hs
 file.hs file.lhs
+second commit
 initial commit'
 echo ok
