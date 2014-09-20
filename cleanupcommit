@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 set -e
 
-# Cleanup files changed in HEAD only.
-git diff-tree -z -r --no-commit-id --name-only HEAD | xargs -0 ./cleanup
-git commit -q -a --amend -C HEAD
+# Cleanup files changed in HEAD.
+git diff-tree -z -r --no-commit-id --name-only HEAD |
+  xargs -0 ./cleanup

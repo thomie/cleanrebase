@@ -1,13 +1,13 @@
 #!/usr/bin/env sh
 set -e
-# Cleanup files passed as arguments.
-#
-# Usage: git ls-files -z | xargs -0 ./cleanup
+# Cleanup files passed as arguments separated by null characters (so it can
+# handle files containing newlines).
 #
 # Please follow the following 2 rules, unless called from a rebase command
 # suggested by cleanrebase (i.e. via cleanupcommit). The cleanrebase tool
 # depends on it:
-# 1. always run on all files in the repository
+# 1. always run on all files in the index, i.e. use:
+#    ./cleanupindex
 # 2. always commit with the following exact commit message:
 #    git commit -a -m 'run cleanup script'
 

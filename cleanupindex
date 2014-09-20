@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+set -e
+
+# Cleanup all files cached in the index (i.e. all files on current branch +
+# staging area).
+git ls-files -z | xargs -0 ./cleanup

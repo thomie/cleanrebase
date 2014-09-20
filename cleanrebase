@@ -1,16 +1,18 @@
 #!/usr/bin/env sh
 set -e
 
-help="Usage: git checkout master && $0 <branch>
+help="Usage: git checkout master && ./cleanrebase [--help] <branch>
 
+Specify the <branch> you want to rebase onto master. Run the 'git rebase'
+command that this tools suggests, and follow the instructions given by git.
+Then run 'git checkout master && ./cleanrebase <branch>' again, until you
+see the message 'cleanrebase is DONE'.
+"
+help2="
 This tool suggests which rebase command to run next, for a rebase of <branch>
 onto master. It finds new commits on master that contain changes created by
 the 'cleanup' script, and makes sure the <branch> gets rebased on top of them
 with as little merge difficulties as possible.
-
-Run the suggested 'git rebase' command, and follow the instructions given by
-git. Then run 'git checkout master && $0 <branch>' again, until you see the
-message '$0 is DONE'.
 
 This is how the suggestions are made:
   * if the first new commit on master /does not/ contain changes created by
@@ -23,9 +25,9 @@ This is how the suggestions are made:
     'cleanup' script, then the suggested rebase command will move <branch> one
     commit closer to the tip of master. This is a special rebase command,
     which never results in a merge conflicts for you to solve (it favors the
-    commits from <branch> in case of a merge conflict, and runs the 'cleanup'
+    commits from <branch> in case of a merge conflict, runs the 'cleanup'
     script on all changed files (via an intermediate script called
-    'cleanupcommit', which also amends the final result)).
+    'cleanupcommit'), and then amends the changes to the commit).
 
 Your data should be safe when running the suggested commands. If you want, you
 can create backup snapshots of <branch> before you start, by running:
@@ -37,8 +39,9 @@ mailinglist or irc. Happy rebasing!
 "
 
 
+
 ### Functions
-die() { echo "Error in $0. $@" 1>&2; exit 1; }
+die() { echo "Error running cleanrebase. $@" 1>&2; exit 1; }
 
 version2int() {
   echo "$@" | awk '{print $NF}' | awk -F. '{printf "%03d%03d%03d", $1, $2, $3}'
@@ -54,10 +57,10 @@ fi
 for arg in "$@"; do
   case $arg in
     --help)
-      echo "$help"; exit 0
+      echo "$help$help2"; exit 0
       ;;
     *)
-      test -z "$branch" -a -n "$arg" || die "Usage: $0 [--help] <branch>"
+      test -z "$branch" -a -n "$arg" || die "Usage: ./cleanrebase [--help] <branch>"
       branch=$arg
       ;;
   esac
@@ -94,12 +97,12 @@ if [ -n "$cleanup_script_commit" ]; then
     command="git rebase $cleanup_script_commit^ $branch"
   else
     # -X theirs means keep code in $branch (confusingly)
-    command="git rebase -i -s recursive -X theirs --exec './cleanupcommit' $cleanup_script_commit $branch"
+    command="git rebase -i -X theirs -x './cleanupcommit && git commit -q -a --amend -C HEAD' $cleanup_script_commit $branch"
   fi
 elif [ -n "$first_new_commit" ]; then
   command="git rebase master $branch"
 else
-  echo "$0 is DONE" 1>&2; exit 1
+  echo "cleanrebase is DONE" 1>&2; exit 1
 fi
 
 echo $command
