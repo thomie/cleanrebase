@@ -1,0 +1,26 @@
+Usage: git checkout master && ./cleanrebase [--help] <branch>
+
+Specify the <branch> you want to rebase onto master. Run the 'git rebase'
+command that this tools suggests, and follow the instructions given by git.
+Then run 'git checkout master && ./cleanrebase <branch>' again, until you
+see the message 'cleanrebase is DONE'.
+
+This tool suggests which rebase command to run next, for a rebase of <branch>
+onto master. It finds new commits on master that contain changes created by
+the 'cleanup' script, and makes sure the <branch> gets rebased on top of them
+with as little merge difficulties as possible.
+
+This is how the suggestions are made:
+  * if the first new commit on master /does not/ contain changes created by
+    the 'cleanup' script, then the suggested command will be to rebase onto
+    the /parent/ of the first new commit on master that /is/ created by the
+    'cleanup' script, or onto the tip of master, if such commit does not
+    exist. Since these are normal rebase commands, you may have to solve merge
+    conflicts as usual.
+  * if the first new commit on master /does/ contain changes created by the
+    'cleanup' script, then the suggested rebase command will move <branch> one
+    commit closer to the tip of master. This is a special rebase command,
+    which never results in a merge conflicts for you to solve (it favors the
+    commits from <branch> in case of a merge conflict, runs the 'cleanup'
+    script on all changed files (via an intermediate script called
+    'cleanupcommit'), and then amends the changes to the commit).
